@@ -1,0 +1,14 @@
+{
+  "default_server_config": {
+    "m.homeserver": {
+      "base_url": "http://172.17.10.4:8008",
+      "server_name": "localhost"
+    }
+  },
+  "livekit": {
+    "livekit_service_url": "http://localhost:8081"
+  },
+  "features": {
+    "feature_group_calls": true
+  }
+}

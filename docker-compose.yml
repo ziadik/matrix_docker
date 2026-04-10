@@ -1,0 +1,116 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    container_name: dendrite_db
+    volumes:
+      - ./postgresql:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: itsasecret
+      POSTGRES_USER: dendrite
+      POSTGRES_DB: dendrite
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dendrite"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dendrite_network
+
+  dendrite:
+    image: matrixdotorg/dendrite-monolith:latest
+    container_name: dendrite_server
+    ports:
+      - "8008:8008"
+      - "8448:8448"
+    volumes:
+      - ./config:/etc/dendrite
+      - ./media:/var/dendrite/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dendrite_network
+    restart: unless-stopped
+
+  element-web:
+    image: vectorim/element-web:latest
+    container_name: element_web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./element-config.json:/app/config.json:ro
+    depends_on:
+      - dendrite
+    networks:
+      - dendrite_network
+    restart: unless-stopped
+
+  # ========== НОВЫЕ СЕРВИСЫ ДЛЯ ЗВОНКОВ ==========
+
+  redis:
+    image: redis:7-alpine
+    container_name: dendrite_redis
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - ./redis_data:/data
+    networks:
+      - dendrite_network
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit_server
+    command: --config /etc/livekit.yaml
+    ports:
+      - "7881:7881"                     # TCP Signaling
+      - "7882:7882/udp"                 # UDP media
+      - "50000-50200:50000-50200/udp"   # Media port range
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    environment:
+      - LIVEKIT_KEYS=api_key:${LIVEKIT_SECRET}
+    depends_on:
+      - redis
+    networks:
+      - dendrite_network
+    restart: unless-stopped
+
+  lk-jwt-service:
+    image: ghcr.io/element-hq/lk-jwt-service:latest
+    container_name: lk_jwt_service
+    environment:
+      - LIVEKIT_URL=wss://livekit.${DOMAIN}
+      - LIVEKIT_KEY=api_key
+      - LIVEKIT_SECRET=${LIVEKIT_SECRET}
+      - MATRIX_SERVER_URL=http://dendrite:8008
+    networks:
+      - dendrite_network
+    restart: unless-stopped
+
+  element-call:
+    image: ghcr.io/element-hq/element-call:latest
+    container_name: element_call
+    ports:
+      - "8081:80"
+    volumes:
+      - ./element-call-config.json:/app/config.json:ro
+    depends_on:
+      - lk-jwt-service
+    networks:
+      - dendrite_network
+    restart: unless-stopped
+
+  coturn:
+    image: coturn/coturn:latest
+    container_name: turn_server
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./certs:/etc/coturn/certs:ro
+    restart: unless-stopped
+
+networks:
+  dendrite_network:
