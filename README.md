@@ -1,240 +1,79 @@
-Here is a step-by-step guide to setting up a Matrix Dendrite server on your local Windows machine using Docker Compose. This process will walk you from the initial setup to the moment you log in with a Matrix client.
+# Matrix Dendrite Server for Corporate Local Network
 
-The setup involves three main stages: generating security keys, configuring the server, and launching the containers.
+Полное решение для развертывания защищенного корпоративного мессенджера Matrix Dendrite с Element Web в локальной сети.
 
-🐳 Step 1: Generate Private Key and Config
-First, open PowerShell or Command Prompt and create a dedicated project folder. Navigate into it and run the following commands.
+## 📋 Оглавление
 
-1. Generate the Signing Key
-This key is crucial for signing events and identifying your server.
+- [Архитектура](#-архитектура)
+- [Требования](#-требования)
+- [Быстрый старт](#-быстрый-старт)
+- [Конфигурация](#-конфигурация)
+- [Управление пользователями](#-управление-пользователями)
+- [Запуск и остановка](#-запуск-и-остановка)
+- [Устранение неполадок](#-устранение-неполадок)
+- [Безопасность](#-безопасность)
+- [Производительность](#-производительность)
+
+## 🏗 Архитектура
+┌─────────────────────────────────────────────────────────┐
+│ Docker Compose │
+├─────────────────────────────────────────────────────────┤
+│ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
+│ │ Dendrite │ │ PostgreSQL │ │ Element Web │ │
+│ │ (Matrix) │ │ (Database) │ │ (Client) │ │
+│ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ │
+│ │ │ │ │
+│ └──────────────────┴──────────────────┘ │
+│ │ │
+│ Network: bridge │
+└─────────────────────────┼───────────────────────────────┘
+│
+┌─────┴─────┐
+│ LAN Users │
+└───────────┘
+
+text
+
+## 💻 Требования
+
+- **Windows 10/11** или **Windows Server 2019/2022**
+- **Docker Desktop** (с поддержкой WSL2)
+- **8 GB RAM** (рекомендуется)
+- **20 GB свободного дискового пространства**
+- **PowerShell 5.1+**
+
+## 🚀 Быстрый старт
+
+### 1. Установка Docker Desktop
+
+Скачайте и установите [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/).
+После установки включите WSL2 интеграцию.
+
+### 2. Клонирование проекта
 
 powershell
-mkdir -p ./config
+# Создайте директорию проекта
+mkdir C:\Projects\matrix_docker
+cd C:\Projects\matrix_docker
+
+# Создайте необходимые директории
+mkdir config, media, postgresql
+3. Генерация ключей и конфигурации
+powershell
+# Генерация signing key
 docker run --rm --entrypoint="/usr/bin/generate-keys" -v ${PWD}/config:/mnt matrixdotorg/dendrite-monolith:latest -private-key /mnt/matrix_key.pem
-Note: If you are using Command Prompt (cmd), replace ${PWD} with %cd%.
 
-2. Generate the Configuration File
-This creates a base dendrite.yaml file. Crucially, you must replace your.domain.com with your actual server name (for a local network test, you can use a name like matrix.local or your computer's hostname).
-
-powershell
-docker run --rm --entrypoint="/bin/sh" -v ${PWD}/config:/mnt matrixdotorg/dendrite-monolith:latest -c "/usr/bin/generate-config -dir /var/dendrite/ -db postgres://dendrite:itsasecret@postgres/dendrite?sslmode=disable -server your.domain.com > /mnt/dendrite.yaml"
-🐳 Step 2: Create the Docker Compose File
-In your project folder, create a file named docker-compose.yml. Copy and paste the following configuration. This defines the Dendrite server and its PostgreSQL database.
+# Генерация конфигурации (замените matrix.corp.local на ваш адрес)
+docker run --rm --entrypoint="/bin/sh" -v ${PWD}/config:/mnt matrixdotorg/dendrite-monolith:latest -c "/usr/bin/generate-config -dir /var/dendrite/ -db postgres://dendrite:itsasecret@postgres/dendrite?sslmode=disable -server matrix.corp.local > /mnt/dendrite.yaml"
+4. Настройка Docker Compose
+Создайте docker-compose.yml:
 
 yaml
-version: "3.8"
-
 services:
   postgres:
     image: postgres:15-alpine
-    restart: unless-stopped
     container_name: dendrite_db
-    volumes:
-      - ./postgresql:/var/lib/postgresql/data
-    environment:
-      POSTGRES_PASSWORD: itsasecret
-      POSTGRES_USER: dendrite
-      POSTGRES_DB: dendrite
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dendrite"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - dendrite_network
-
-  monolith:
-    image: matrixdotorg/dendrite-monolith:latest
-    container_name: dendrite_server
-    ports:
-      - "8008:8008"
-      - "8448:8448"
-    volumes:
-      - ./config:/etc/dendrite
-      - ./media:/var/dendrite/media
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - dendrite_network
     restart: unless-stopped
-
-networks:
-  dendrite_network:
-🐳 Step 3: Run and Register Your User
-1. Launch the Server
-From your project folder in the terminal, run:
-
-bash
-docker-compose up -d
-This will download the images and start the containers in the background. You can check the logs with docker-compose logs -f to ensure there are no errors.
-
-2. Create Your Admin Account
-Your server is now running but has no users. You need to create one using the registration secret we set in the config. Run this command to create an admin user named your-username:
-
-bash
-docker exec -it dendrite_server /usr/bin/create-account \
-  -config /etc/dendrite/dendrite.yaml \
-  -username your-username \
-  -password a-strong-password \
-  -admin
-🐳 Step 4: Connect with a Client
-Your local Dendrite server is now running and listening on your Windows machine.
-
-Server URL: In your Matrix client, set the Homeserver URL to http://localhost:8008.
-
-Login: Use the username (your-username) and password you just created.
-
-Client Recommendation: You can use any Matrix client, but Element Web is a common choice. You can either use the public version at app.element.io (just change the server URL in the login settings) or run it locally via Docker.
-
-🚀 Next Steps & Local Networking
-Access from other devices: To connect from your phone or another computer on your local network, replace localhost with your Windows machine's local IP address (e.g., http://192.168.1.100:8008). You might need to adjust your Windows Firewall to allow incoming connections on ports 8008 and 8448.
-
-Federation: If you want to chat with users on other Matrix servers (like matrix.org), your server needs to be publicly accessible on the internet and configured with a valid domain name and SSL certificates. This guide focuses on a local setup, which is perfect for testing and learning.
-
-I hope this guide helps you get your server running smoothly. Are you planning to connect from other devices on your network, or will this just be for local testing?
-
-🎨 Recommended: Add Element Web via Docker Compose
-Update your docker-compose.yml file to include Element Web as an additional service:
-
-yaml
-version: "3.8"
-
-services:
-  postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    container_name: dendrite_db
-    volumes:
-      - ./postgresql:/var/lib/postgresql/data
-    environment:
-      POSTGRES_PASSWORD: itsasecret
-      POSTGRES_USER: dendrite
-      POSTGRES_DB: dendrite
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dendrite"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - dendrite_network
-
-  monolith:
-    image: matrixdotorg/dendrite-monolith:latest
-    container_name: dendrite_server
-    ports:
-      - "8008:8008"
-      - "8448:8448"
-    volumes:
-      - ./config:/etc/dendrite
-      - ./media:/var/dendrite/media
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - dendrite_network
-    restart: unless-stopped
-
-  # 👇 ADD ELEMENT WEB SERVICE
-  element-web:
-    image: vectorim/element-web:latest
-    container_name: element_web
-    ports:
-      - "8080:80"  # Access Element Web at http://localhost:8080
-    volumes:
-      - ./element-config.json:/app/config.json:ro
-    depends_on:
-      - monolith
-    networks:
-      - dendrite_network
-    restart: unless-stopped
-
-networks:
-  dendrite_network:
-📝 Step 2: Create Element Web Configuration
-Create an element-config.json file in your project folder (same directory as docker-compose.yml):
-
-json
-{
-  "default_server_config": {
-    "m.homeserver": {
-      "base_url": "http://monolith:8008",
-      "server_name": "your.domain.com"
-    },
-    "m.identity_server": {
-      "base_url": "https://vector.im"
-    }
-  },
-  "brand": "Element",
-  "integrations_ui_url": "https://scalar.vector.im/",
-  "integrations_rest_url": "https://scalar.vector.im/api",
-  "integrations_widgets_urls": [
-    "https://scalar.vector.im/_matrix/integrations/v1",
-    "https://scalar.vector.im/api",
-    "https://scalar-staging.vector.im/_matrix/integrations/v1",
-    "https://scalar-staging.vector.im/api"
-  ],
-  "default_country_code": "GB",
-  "show_labs_settings": true,
-  "features": {
-    "feature_pinning": true,
-    "feature_custom_status": true,
-    "feature_message_forwarding": true
-  },
-  "room_directory": {
-    "servers": ["matrix.org", "your.domain.com"]
-  },
-  "enable_presence_by_hs_url": {
-    "http://monolith:8008": true
-  }
-}
-Important: Replace your.domain.com with your actual server name (same one you used when generating dendrite.yaml).
-
-🚀 Step 3: Launch Everything
-bash
-# Stop any running containers
-docker-compose down
-
-# Start everything (Dendrite + Element Web)
-docker-compose up -d
-
-# Check logs to ensure everything is running
-docker-compose logs -f
-🔗 Step 4: Access Element Web
-Once everything is running:
-
-Open your browser and navigate to: http://localhost:8080
-
-Sign in using:
-
-Homeserver URL: http://localhost:8008 (or leave blank if configured properly)
-
-Username: your-username (the one you created earlier)
-
-Password: your-password
-
-📞 Архитектура звонков в Matrix
-Современный стек звонков в Matrix (Native MatrixRTC) больше не использует P2P-подключения. Он построен на архитектуре SFU (Selective Forwarding Unit) и требует нескольких компонентов :
-
-LiveKit — SFU-сервер, который принимает видеопотоки от участников и пересылает их другим
-
-lk-jwt-service — сервис-мост, который выдает токены доступа к LiveKit для пользователей Matrix
-
-Element Call — специализированный интерфейс для групповых звонков (может работать внутри Element Web)
-
-CoTurn — TURN/STUN-сервер для обхода NAT и файерволов
-
-🐳 Docker Compose конфигурация
-Ниже представлен полный docker-compose.yml с добавлением всех необходимых сервисов. Обратите внимание: этот конфиг предназначен для production-окружения и требует публичного домена с валидным SSL-сертификатом. Локальная отладка звонков (через localhost) может не работать из-за требований WebRTC к HTTPS .
-
-yaml
-version: "3.8"
-
-services:
-  postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    container_name: dendrite_db
     volumes:
       - ./postgresql:/var/lib/postgresql/data
     environment:
@@ -278,153 +117,256 @@ services:
       - dendrite_network
     restart: unless-stopped
 
-  # ========== НОВЫЕ СЕРВИСЫ ДЛЯ ЗВОНКОВ ==========
-
-  redis:
-    image: redis:7-alpine
-    container_name: dendrite_redis
-    command: redis-server --save 60 1 --loglevel warning
-    volumes:
-      - ./redis_data:/data
-    networks:
-      - dendrite_network
-    restart: unless-stopped
-
-  livekit:
-    image: livekit/livekit-server:latest
-    container_name: livekit_server
-    command: --config /etc/livekit.yaml
-    ports:
-      - "7881:7881"                     # TCP Signaling
-      - "7882:7882/udp"                 # UDP media
-      - "50000-50200:50000-50200/udp"   # Media port range
-    volumes:
-      - ./livekit.yaml:/etc/livekit.yaml
-    environment:
-      - LIVEKIT_KEYS=api_key:${LIVEKIT_SECRET}
-    depends_on:
-      - redis
-    networks:
-      - dendrite_network
-    restart: unless-stopped
-
-  lk-jwt-service:
-    image: ghcr.io/element-hq/lk-jwt-service:latest
-    container_name: lk_jwt_service
-    environment:
-      - LIVEKIT_URL=wss://livekit.${DOMAIN}
-      - LIVEKIT_KEY=api_key
-      - LIVEKIT_SECRET=${LIVEKIT_SECRET}
-      - MATRIX_SERVER_URL=http://dendrite:8008
-    networks:
-      - dendrite_network
-    restart: unless-stopped
-
-  element-call:
-    image: ghcr.io/element-hq/element-call:latest
-    container_name: element_call
-    ports:
-      - "8081:80"
-    volumes:
-      - ./element-call-config.json:/app/config.json:ro
-    depends_on:
-      - lk-jwt-service
-    networks:
-      - dendrite_network
-    restart: unless-stopped
-
-  coturn:
-    image: coturn/coturn:latest
-    container_name: turn_server
-    network_mode: host
-    volumes:
-      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
-      - ./certs:/etc/coturn/certs:ro
-    restart: unless-stopped
-
 networks:
   dendrite_network:
-⚙️ Конфигурационные файлы
-1. livekit.yaml
-yaml
-port: 7880
-rtc:
-  udp_port: 7882
-  tcp_port: 7881
-  port_range_start: 50000
-  port_range_end: 50200
-  use_external_ip: true
-  turn_servers:
-    - host: turn.${DOMAIN}
-      port: 3478
-      protocol: udp
-      secret: ${TURN_SECRET}
-redis:
-  address: redis:6379
-keys:
-  api_key: ${LIVEKIT_SECRET}
-2. turnserver.conf
-conf
-listening-port=3478
-tls-listening-port=5349
-min-port=49152
-max-port=65535
-external-ip=${PUBLIC_IP}
-realm=turn.${DOMAIN}
-fingerprint
-lt-cred-mech
-use-auth-secret
-static-auth-secret=${TURN_SECRET}
-no-multicast-peers
-no-cli
-3. element-call-config.json
+5. Настройка Element Web
+Создайте element-config.json:
+
 json
 {
   "default_server_config": {
     "m.homeserver": {
-      "base_url": "http://localhost:8008",
-      "server_name": "localhost"
+      "base_url": "http://dendrite:8008",
+      "server_name": "matrix.corp.local"
     }
   },
-  "livekit": {
-    "livekit_service_url": "http://localhost:8081"
-  },
+  "brand": "Element",
+  "show_labs_settings": true,
   "features": {
-    "feature_group_calls": true
+    "feature_pinning": true,
+    "feature_custom_status": true
   }
 }
-🚀 Переменные окружения (файл .env)
-bash
-DOMAIN=your.domain.com
-PUBLIC_IP=your_server_public_ip
-LIVEKIT_SECRET=generate_strong_random_string
-TURN_SECRET=generate_another_strong_random_string
-🔧 Настройка Dendrite
-В dendrite.yaml добавьте конфигурацию TURN-сервера:
+6. Запуск сервера
+powershell
+# Запуск всех сервисов
+docker-compose up -d
+
+# Проверка статуса
+docker-compose ps
+
+# Просмотр логов
+docker-compose logs -f
+⚙️ Конфигурация
+Основные настройки dendrite.yaml
+yaml
+global:
+  # Имя сервера (важно для локальной сети)
+  server_name: matrix.corp.local
+  
+  # Отключаем федерацию для корпоративной сети
+  disable_federation: true
+  
+  # Настройки базы данных
+  database:
+    connection_string: postgresql://dendrite:itsasecret@postgres/dendrite?sslmode=disable
+    max_open_conns: 90
+    max_idle_conns: 5
+
+client_api:
+  # Отключаем открытую регистрацию
+  registration_disabled: true
+  # Включаем регистрацию по shared secret
+  registration_shared_secret: "YOUR_SECRET_KEY_HERE"
+
+media_api:
+  # Максимальный размер загружаемых файлов (100MB)
+  max_file_size_bytes: 104857600
+Переменные окружения
+Создайте .env файл для sensitive данных:
+
+env
+POSTGRES_PASSWORD=itsasecret
+SHARED_SECRET=your_strong_secret_key_here
+DOMAIN=matrix.corp.local
+👥 Управление пользователями
+Создание администратора
+powershell
+docker exec -it dendrite_server /usr/bin/create-account `
+  -config /etc/dendrite/dendrite.yaml `
+  -username admin -admin
+Массовое создание пользователей (PowerShell скрипт)
+Создайте create_users.ps1:
+
+powershell
+# create_users.ps1
+$SHARED_SECRET = "YOUR_SECRET_KEY_HERE"
+$SERVER_URL = "http://localhost:8008"
+
+$users = @(
+    @{username="ivanov"; password="Pass123!"; admin=$false},
+    @{username="petrov"; password="Pass456!"; admin=$false},
+    @{username="sidorov"; password="Pass789!"; admin=$true}
+)
+
+function Create-User {
+    param($Username, $Password, $IsAdmin)
+    
+    $nonce = ([DateTimeOffset]::Now.ToUnixTimeMilliseconds()).ToString()
+    $adminFlag = if ($IsAdmin) { "admin" } else { "notadmin" }
+    
+    $macString = "$nonce`0$Username`0$Password`0$adminFlag"
+    $hmac = New-Object System.Security.Cryptography.HMACSHA1
+    $hmac.Key = [Text.Encoding]::UTF8.GetBytes($SHARED_SECRET)
+    $signature = $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($macString))
+    $mac = [Convert]::ToBase64String($signature)
+    
+    $body = @{
+        nonce = $nonce
+        username = $Username
+        password = $Password
+        mac = $mac
+        admin = $IsAdmin
+    } | ConvertTo-Json
+    
+    try {
+        $response = Invoke-RestMethod -Uri "$SERVER_URL/_matrix/client/r0/register" `
+            -Method Post -Body $body -ContentType "application/json"
+        Write-Host "✓ Created $Username" -ForegroundColor Green
+    } catch {
+        Write-Host "✗ Failed to create $Username" -ForegroundColor Red
+    }
+}
+
+foreach ($user in $users) {
+    Create-User -Username $user.username -Password $user.password -IsAdmin $user.admin
+    Start-Sleep -Seconds 1
+}
+🔄 Запуск и остановка
+Базовые команды
+powershell
+# Запуск всех сервисов
+docker-compose up -d
+
+# Остановка всех сервисов
+docker-compose down
+
+# Перезапуск
+docker-compose restart
+
+# Просмотр статуса
+docker-compose ps
+
+# Просмотр логов
+docker-compose logs -f dendrite
+
+# Остановка с удалением томов (очистка данных)
+docker-compose down -v
+Обновление сервера
+powershell
+# Скачать новые образы
+docker-compose pull
+
+# Пересоздать контейнеры с новыми образами
+docker-compose up -d --force-recreate
+🔧 Устранение неполадок
+Конфликт имен контейнеров
+powershell
+# Остановить и удалить старые контейнеры
+docker-compose down
+docker rm dendrite_server
+docker-compose up -d
+Ошибка "inappropriate ioctl for device"
+Используйте API метод создания пользователей вместо create-account.
+
+Проблемы с подключением клиентов
+Проверьте:
+
+Доступность порта 8008: Test-NetConnection -ComputerName localhost -Port 8008
+
+Настройки брандмауэра Windows
+
+Правильность server_name в конфигурации клиента
+
+Логирование ошибок
+powershell
+# Детальные логи Dendrite
+docker-compose logs --tail=100 dendrite
+
+# Логи PostgreSQL
+docker-compose logs postgres
+
+# Логи Element Web
+docker-compose logs element-web
+🔒 Безопасность
+Рекомендации для корпоративной сети
+Используйте сложные пароли для всех учетных записей
+
+Регулярно меняйте registration_shared_secret
+
+Ограничьте доступ к портам через брандмауэр Windows
+
+Ведите аудит созданных пользователей
+
+Настройте регулярные бэкапы базы данных
+
+Бэкап данных
+powershell
+# Бэкап PostgreSQL
+docker exec dendrite_db pg_dump -U dendrite dendrite > backup_$(Get-Date -Format "yyyyMMdd").sql
+
+# Бэкап конфигурации
+Copy-Item -Path .\config -Destination .\backup_config_$(Get-Date -Format "yyyyMMdd") -Recurse
+
+# Бэкап медиафайлов
+Copy-Item -Path .\media -Destination .\backup_media_$(Get-Date -Format "yyyyMMdd") -Recurse
+⚡ Производительность
+Оптимизация для корпоративной сети
+Увеличьте лимиты в Docker Desktop:
+
+CPU: 4 ядра
+
+RAM: 4 GB
+
+Swap: 1 GB
+
+Настройки PostgreSQL в docker-compose.yml:
 
 yaml
-turn:
-  turn_uris:
-    - "turn:turn.${DOMAIN}:3478?transport=udp"
-    - "turn:turn.${DOMAIN}:3478?transport=tcp"
-  turn_shared_secret: "${TURN_SECRET}"
-⚠️ Важные ограничения и troubleshooting
-Dendrite и звонки: Пользователи сообщают о проблемах с инициализацией звонков в Dendrite . Кнопки звонков могут не реагировать, а в логах могут быть ошибки 404 на эндпоинтах /_matrix/client/r0/thirdparty/user/ .
+command: >
+  postgres -c shared_buffers=256MB
+           -c effective_cache_size=768MB
+           -c maintenance_work_mem=64MB
+Мониторинг ресурсов:
 
-Проблема "Waiting for media": Часто возникает из-за того, что LiveKit не видит правильный внешний IP. Убедитесь, что use_external_ip: true в livekit.yaml и порты UDP проброшены правильно .
+powershell
+docker stats
+📱 Подключение клиентов
+Element Web
+URL: http://YOUR_SERVER_IP:8080
 
-HTTPS обязателен: WebRTC требует безопасного контекста. Для локальной разработки придется использовать self-signed сертификаты и вручную добавить их в доверенные .
+Homeserver URL: http://YOUR_SERVER_IP:8008
 
-Проблемы с TURN: Если звонки работают только при включенном turn.matrix.org, значит ваш TURN-сервер настроен неверно. Проверьте файрвол и конфигурацию .
+Другие клиенты
+Element Desktop: Настройки → Изменить сервер → http://YOUR_SERVER_IP:8008
 
-Медиа порты: Убедитесь, что следующие порты открыты в брандмауэре Windows:
+FluffyChat: Настройки → Добавить домашний сервер → http://YOUR_SERVER_IP:8008
 
-7881 TCP
+🗺 План развития
+Добавить голосовые и видеозвонки (LiveKit + Element Call)
 
-7882 UDP
+Настроить резервное копирование
 
-50000-50200 UDP
+Интеграция с Active Directory
 
-3478 UDP/TCP
+Веб-интерфейс администратора
 
-49152-65535 UDP (для TURN)
+Автоматическое создание комнат для отделов
+
+📞 Поддержка
+Matrix Documentation: https://matrix.org/docs/
+
+Dendrite Docs: https://matrix-org.github.io/dendrite/
+
+Docker Docs: https://docs.docker.com/
+
+📄 Лицензия
+Этот проект использует компоненты с открытым исходным кодом. Dendrite лицензирован под Apache 2.0.
+
+⚠️ Важно: Dendrite более не поддерживается официально (архивирован 25 ноября 2024). Для production-использования рекомендуется рассмотреть миграцию на Synapse.
+
+Последнее обновление: 2026-04-10
+
+
+
+# Этот README включает все необходимые инструкции для развертывания и управления вашим Matrix сервером в локальной корпоративной сети. Вы можете адаптировать его под свои конкретные требования!
