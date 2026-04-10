@@ -1,0 +1,6 @@
+/media
+/postgresql
+/redis_data
+/certs
+/config
+user.csv
